@@ -5,7 +5,7 @@
     "files.associations": {
         "*.ino": "cpp"
     },
-    "particle.targetDevice": "FallsTest",
-    "particle.firmwareVersion": "1.3.1",
-    "particle.targetPlatform": "photon"
+    "particle.firmwareVersion": "1.5.0",
+    "particle.targetPlatform": "argon",
+    "particle.targetDevice": "Argon-Dev"
 }
