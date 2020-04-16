@@ -1,6 +1,11 @@
 # Coulomb-Counter
 
-This sketch shows how to use the LTC4150 Coulomb Counter breakout
+This sketch is based on a sketch from Sparkfun which I modified in two main ways:
+1) I changed it to take advantage of the Particle Platform
+2) I added a "Sleep Test" mode to facilitiate testing Particle device
+current consumption when in different sleep modes
+
+From the original Sparkfun code: This is  how to use the LTC4150 Coulomb Counter breakout
 board along with interrupts to implement a battery "gas gauge."
 
 Product page: https://www.sparkfun.com/products/12052
@@ -8,7 +13,7 @@ Software repository: https://github.com/sparkfun/LTC4150_Coulomb_Counter_BOB
 
 Chip's Particle Modified Version - https://github.com/chipmc/Coulomb-Counter
 
-HOW IT WORKS:
+## HOW IT WORKS:
 
 Battery capacity is measured in amp-hours (Ah). For example, a one
 amp-hour battery can provide 1 amp of current for one hour, or 2 amps
@@ -41,23 +46,22 @@ measure the time between pulses to calculate current draw. At 1A
 1.6275 Hz. Note that for low currents, pulses will be many seconds
 apart, so don't expect frequent updates.
 
-HARDWARE MODIFICATIONS ON THE SENSOR:
+## HARDWARE MODIFICATIONS ON THE SENSOR:
 
 For this sketch, leave SJ1 soldered (closed).
 This connects INT and CLR to clear interrupts automatically.
 
 Since the Particle Argon is 3.3V, we need to close (solder) both SJ2 and SJ3.
 
+## RUNNING THE SKETCH:
 
-RUNNING THE SKETCH:
-
-BATTERY TEST MODE (default):
+### BATTERY TEST MODE (default):
 This sketch monitors current moving into and out of a battery.
 Whenever it detects a low INT signal from the LTC4150, it will
 update the battery state-of-charge (how full the battery is),
 current draw, etc.
 
-SLEEP TEST MODE:
+### SLEEP TEST MODE:
 In this mode you use the D7 pin on the device you are testing to be "On"
 when the device is awake and "off" when it is asleep.  Calculations on
 instant and average current will start once the device sleeps and 
@@ -68,7 +72,7 @@ of the battery.  It also has a function to reset the sketch to initial
 values.  All output is in the Particle console.
 
 
-LICENSE - FROM ORIGINAL SPARKFUN SKETCH:
+## LICENSE - FROM ORIGINAL SPARKFUN SKETCH:
 
 Our example code uses the "beerware" license. You can do anything
 you like with this code. No really, anything. If you find it useful
