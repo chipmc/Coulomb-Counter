@@ -1,35 +1,81 @@
 # Coulomb-Counter
 
-A Particle project named Coulomb-Counter
+This sketch shows how to use the LTC4150 Coulomb Counter breakout
+board along with interrupts to implement a battery "gas gauge."
 
-## Welcome to your project!
+Product page: https://www.sparkfun.com/products/12052
+Software repository: https://github.com/sparkfun/LTC4150_Coulomb_Counter_BOB
 
-Every new Particle project is composed of 3 important elements that you'll see have been created in your project directory for Coulomb-Counter.
+Chip's Particle Modified Version - https://github.com/chipmc/Coulomb-Counter
 
-#### ```/src``` folder:  
-This is the source folder that contains the firmware files for your project. It should *not* be renamed. 
-Anything that is in this folder when you compile your project will be sent to our compile service and compiled into a firmware binary for the Particle device that you have targeted.
+HOW IT WORKS:
 
-If your application contains multiple files, they should all be included in the `src` folder. If your firmware depends on Particle libraries, those dependencies are specified in the `project.properties` file referenced below.
+Battery capacity is measured in amp-hours (Ah). For example, a one
+amp-hour battery can provide 1 amp of current for one hour, or 2 amps
+for half an hour, or half an amp for two hours, etc.
 
-#### ```.ino``` file:
-This file is the firmware that will run as the primary application on your Particle device. It contains a `setup()` and `loop()` function, and can be written in Wiring or C/C++. For more information about using the Particle firmware API to create firmware for your Particle device, refer to the [Firmware Reference](https://docs.particle.io/reference/firmware/) section of the Particle documentation.
+The LTC4150 monitors current passing into or out of a battery.
+It has an output called INT (interrupt) that will pulse low every
+time 0.0001707 amp-hours passes through the part. Or to put it
+another way, the INT signal will pulse 5859 times for one amp-hour.
 
-#### ```project.properties``` file:  
-This is the file that specifies the name and version number of the libraries that your project depends on. Dependencies are added automatically to your `project.properties` file when you add a library to a project using the `particle library add` command in the CLI or add a library in the Desktop IDE.
+If you hook up a full 1Ah (1000mAh) battery to the LTC4150, you
+can expect to get 5859 pulses before it's depleted. If you keep track
+of these pulses, you can accurately determine the remaining battery
+capacity.
 
-## Adding additional files to your project
+There is also a POL (polarity) signal coming out of the LTC4150.
+When you detect a pulse, you can check the POL signal to see whether
+current is moving into or out of the battery. If POL is low, current is
+coming out of the battery (discharging). If POL is high, current is
+going into the battery (charging).
 
-#### Projects with multiple sources
-If you would like add additional files to your application, they should be added to the `/src` folder. All files in the `/src` folder will be sent to the Particle Cloud to produce a compiled binary.
+(Note that because of chemical inefficiencies, it takes a bit more current
+to charge a battery than you will eventually get out of it. This sketch
+does not take this into account. For better accuracy you might provide
+a method to "zero" a full battery, either automatically or manually.)
 
-#### Projects with external libraries
-If your project includes a library that has not been registered in the Particle libraries system, you should create a new folder named `/lib/<libraryname>/src` under `/<project dir>` and add the `.h`, `.cpp` & `library.properties` files for your library there. Read the [Firmware Libraries guide](https://docs.particle.io/guide/tools-and-features/libraries/) for more details on how to develop libraries. Note that all contents of the `/lib` folder and subfolders will also be sent to the Cloud for compilation.
+Although it isn't the primary function of the part, you can also
+measure the time between pulses to calculate current draw. At 1A
+(the maximum allowed), INT will pulse every 0.6144 seconds, or
+1.6275 Hz. Note that for low currents, pulses will be many seconds
+apart, so don't expect frequent updates.
 
-## Compiling your project
+HARDWARE MODIFICATIONS ON THE SENSOR:
 
-When you're ready to compile your project, make sure you have the correct Particle device target selected and run `particle compile <platform>` in the CLI or click the Compile button in the Desktop IDE. The following files in your project folder will be sent to the compile service:
+For this sketch, leave SJ1 soldered (closed).
+This connects INT and CLR to clear interrupts automatically.
 
-- Everything in the `/src` folder, including your `.ino` application file
-- The `project.properties` file for your project
-- Any libraries stored under `lib/<libraryname>/src`
+Since the Particle Argon is 3.3V, we need to close (solder) both SJ2 and SJ3.
+
+
+RUNNING THE SKETCH:
+
+BATTERY TEST MODE (default):
+This sketch monitors current moving into and out of a battery.
+Whenever it detects a low INT signal from the LTC4150, it will
+update the battery state-of-charge (how full the battery is),
+current draw, etc.
+
+SLEEP TEST MODE:
+In this mode you use the D7 pin on the device you are testing to be "On"
+when the device is awake and "off" when it is asleep.  Calculations on
+instant and average current will start once the device sleeps and 
+stop and reset once it is awake.
+
+The sketch uses Particle functions to set the capacity nd charge level
+of the battery.  It also has a function to reset the sketch to initial
+values.  All output is in the Particle console.
+
+
+LICENSE - FROM ORIGINAL SPARKFUN SKETCH:
+
+Our example code uses the "beerware" license. You can do anything
+you like with this code. No really, anything. If you find it useful
+and you meet one of us in person someday, consider buying us a beer.
+
+Have fun! -Your friends at SparkFun.
+*/
+
+// Chip's Version tracking
+// v1.0 - First pass at adding a second mode - Sleep testing
