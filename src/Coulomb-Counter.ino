@@ -19,6 +19,7 @@ Chip's Particle Modified Version - https://github.com/chipmc/Coulomb-Counter
 
 // Chip's Version tracking
 // v1.0 - First pass at adding a second mode - Sleep testing
+// v1.1 - Fixed issues with timing / samples and hopefully made more clear program flow 
 
 
 // I edited the pin assignments to match the Particle Photon / Argon
@@ -42,7 +43,7 @@ volatile boolean coulombFlag = false;             // Interrupt flag each time a 
 volatile boolean sleepFlag = false;               // Interrupt indicating a change in the sleep / wake cycle
 const float ah_quanta = 0.17067759;               // mAh for each INT
 float percent_quanta;                             // % battery for each INT
-bool batteryTestMode = true;                      // default to Battery Test Mode
+bool batteryTestMode = false;                     // Battery Test Mode
 bool sleepState = false;                          // Is the device awake or not?
 bool currentStateWriteNeeded = false;             // Did we make a change to a value in the current state structure?
 
@@ -96,31 +97,31 @@ void setup()
   snprintf(chargeStr,sizeof(chargeStr),"%3.1f %%",currentState.currentCharge_percent);
 
   Particle.publish("Startup","LTC4150 Coulomb Counter",PRIVATE);
+  waitUntil(meterParticlePublish);
+  Particle.publish("Status","Select either 'Battery' or 'Sleep' modes to start",PRIVATE);
 }
 
 void loop()
 {
   if (coulombFlag) {
     coulombFlag = false;                                                    // Reset the flag to false so we only do this once per INT
-    makeCalculations(false);                                                // Update the calculations
     digitalWrite(blueLED,HIGH);                                             // Blink the LED
-    delay(100);
+    if (makeCalculations(false) && (batteryTestMode || sleepState)) publishResult();  // Update the calculations and publish if needed
     digitalWrite(blueLED,LOW);
-    publishResult();                                                        // Print out current status (variables set by myISR())
   }
   if (sleepFlag) {
     sleepFlag = false;
     if (digitalRead(sleepIndicator)) {
       sleepState = false;
       waitUntil(meterParticlePublish);
-      Particle.publish("State","Device Awake - Resetting",PRIVATE);
+      Particle.publish("State","Device Awake - Reset and wait for device to sleep again",PRIVATE);
       makeCalculations(true);                                           // This resets all the values and gets us ready for the next sleep cycle
       setMode("Sleep");
     }
     else {
       sleepState = true;                                                 // In the next sleep cycle - start tracking
       waitUntil(meterParticlePublish);
-      Particle.publish("Status","Device Sleeping - starting test",PRIVATE);
+      Particle.publish("Status","Device Sleeping - waiting for first coulomb",PRIVATE);
     }
   }
   if (currentStateWriteNeeded) {
@@ -138,83 +139,84 @@ void publishResult() {
   else if(sleepState) {
     snprintf(data, sizeof(data), "Sleeping: current: %4.3f mA, average: %4.3f mA", currentState.currentCurrent, currentState.averageCurrent);
   }
-  else snprintf(data,sizeof(data),"Waiting for device to sleep");
-
   Particle.publish("Status",data,PRIVATE);
 }
 
-void coulombISR() {                                                       // Run automatically for falling edge on D2
-  coulombFlag = true;                                                     // Set isrflag so main loop knows an interrupt occurred
+void coulombISR() {                                                                 // Run automatically for falling edge on D2
+  coulombFlag = true;                                                               // Set isrflag so main loop knows an interrupt occurred
 }
 
-void sleepWakeISR() {                                                     // Runs when the device under test changes sleep / wake state
+void sleepWakeISR() {                                                               // Runs when the device under test changes sleep / wake state
   sleepFlag = true;
 }
 
-void makeCalculations(bool resetValues) {
+bool makeCalculations(bool resetValues) {
   static unsigned long runTime = 0; 
-  static unsigned long lasttime = 0;                                      // These are based on micros()
-  const int numReadings = 10;               // How Many numbers to average for calibration
-  static float currentBuffer[numReadings];       // the readings from the pressure sensor for calibration
+  static unsigned long lasttime = 0;                                                // These are based on micros()
+  static float currentBuffer[10];                                          // the readings from the pressure sensor for calibration
   static int index = 0;
   float runningTotal = 0;
-  static bool bufferFull = false;
-  int sampleOver = 0;
+  static int numberOfSamples = 0;
+  static bool firstSampleDiscard = true;
 
+  // This is where we reset all the values needed to restart a test
   if (resetValues) {
-    currentState.startTime = Time.now();                                  // When did we start the test
+    currentState.startTime = Time.now();                                            // When did we start the test
     currentState.currentCapacity_mAh = currentState.startingCapacity_mAh;
     currentState.currentCharge_percent = currentState.startingCharge_percent;
     snprintf(capacityStr,sizeof(capacityStr),"%4.1f mAh",currentState.currentCapacity_mAh);
     snprintf(chargeStr,sizeof(chargeStr),"%3.1f %%",currentState.currentCharge_percent);
     strcpy(currentStr,"NA");
     strcpy(averageCurrentStr,"NA");
-    lasttime = 0;
-    index = 0;
-    currentStateWriteNeeded = true;
-    return; 
+    lasttime =  index = runningTotal = numberOfSamples = 0;
+    currentStateWriteNeeded = firstSampleDiscard = true;
+    return false; 
   }
 
-  if (lasttime == 0) {                                                    // First time through we are getting a bad reading - bail on this one.
-    lasttime = runTime;
-    runTime = micros();
-    return;
+  // In this section we will calculate values common to both Battery and System modes
+  if (lasttime == 0) {                                                              // First time through we are getting a bad reading - bail on this one.
+    lasttime = runTime = micros();
+    return false;
   }
 
-  lasttime = runTime;                                                     // Note that first interrupt will be incorrect (no previous time!)
+  lasttime = runTime;                                                               // update times from last event
   runTime = micros();
 
-  boolean polarity = digitalRead(polPin);                                         // Get polarity value 
-  if (polarity) {                                                         // high = charging
-    currentState.currentCapacity_mAh += ah_quanta;
-    currentState.currentCharge_percent += percent_quanta;
-  }
-  else {                                                                  // low = discharging
-    currentState.currentCapacity_mAh -= ah_quanta;
-    currentState.currentCharge_percent -= percent_quanta;
-  }
+  boolean polarity = digitalRead(polPin);                                           // Get polarity value 
+  currentState.currentCurrent = 614.4/((runTime-lasttime)/1000000);                 // Calculate mA from time delay
+  if (polarity) currentState.currentCurrent = -1.0 * currentState.currentCurrent;   // If charging, we'll set mA negative
 
-  currentState.currentCurrent = 614.4/((runTime-lasttime)/1000000);       // Calculate mA from time delay (optional)
-  if (polarity) currentState.currentCurrent = -1.0 * currentState.currentCurrent;// If charging, we'll set mA negative (optional)
-
-  if (batteryTestMode == false && sleepState) {
-    if (index == numReadings || bufferFull) {
-      bufferFull = true;
-      sampleOver = numReadings;
+  // Here we will perform calculations needed for the Battery Test mode
+  if (batteryTestMode) {
+    if (polarity) {                                                                 // high = charging
+      currentState.currentCapacity_mAh += ah_quanta;
+      currentState.currentCharge_percent += percent_quanta;
     }
-    else {
-      sampleOver = index +1;
+    else {                                                                          // low = discharging
+      currentState.currentCapacity_mAh -= ah_quanta;
+      currentState.currentCharge_percent -= percent_quanta;
     }
-    currentBuffer[index] = currentState.currentCurrent;
-    index = (index + 1) % numReadings;
-    for (int i=0; i < sampleOver; i++) runningTotal += currentBuffer[i];
-    currentState.averageCurrent = runningTotal/sampleOver;               // average of readings
+    snprintf(capacityStr,sizeof(capacityStr),"%4.1f mAh",currentState.currentCapacity_mAh);
+    snprintf(chargeStr,sizeof(chargeStr),"%3.1f %%",currentState.currentCharge_percent);
   }
+  // Here we perform calculations needed for the Sleep Test mode
+  else if (batteryTestMode == false && sleepState) {
+    if (firstSampleDiscard) {
+      firstSampleDiscard = false;
+      return false;
+    }
+    numberOfSamples++;
+    if (numberOfSamples > 10) numberOfSamples = 10; 
+    index = (numberOfSamples-1) % 10; 
+    currentBuffer[index] = currentState.currentCurrent;                           // In this section, we will calculate the average
+    
+    for (int i=0; i < numberOfSamples; i++) runningTotal += currentBuffer[i];
+    currentState.averageCurrent = runningTotal/numberOfSamples;                        // average of readings
 
-  snprintf(capacityStr,sizeof(capacityStr),"%4.1f mAh",currentState.currentCapacity_mAh);
-  snprintf(chargeStr,sizeof(chargeStr),"%3.1f %%",currentState.currentCharge_percent);
-  snprintf(currentStr, sizeof(currentStr),"%4.2f mA",currentState.currentCurrent);
-  snprintf(averageCurrentStr, sizeof(averageCurrentStr), "%4.2f mA", currentState.averageCurrent);
+    snprintf(currentStr, sizeof(currentStr),"%4.2f mA",currentState.currentCurrent);
+    snprintf(averageCurrentStr, sizeof(averageCurrentStr), "%4.2f mA", currentState.averageCurrent);
+  }
+  return true;
 }
 
 int setCapacity(String command)

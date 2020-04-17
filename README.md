@@ -83,3 +83,4 @@ Have fun! -Your friends at SparkFun.
 
 // Chip's Version tracking
 // v1.0 - First pass at adding a second mode - Sleep testing
+// v1.1 - Improved sampling and simplified program flow
